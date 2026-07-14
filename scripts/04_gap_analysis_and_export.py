@@ -3,7 +3,8 @@ import numpy as np
 import rasterio
 from rasterio.features import shapes
 import geopandas as gpd
-from shapely.geometry import shape
+import xarray as xr
+import rioxarray
 import joblib
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -19,15 +20,21 @@ GAP_ANALYSIS_OUT = os.path.join(OUTPUT_DIR, "renewable_gap_analysis.gpkg")
 
 def create_suitability_heatmap():
     print("--- Running Gap Analysis & Heatmap Generation ---")
-    print("Loading AI Model and satellite grids...")
+    print("Loading AI Model and aligning satellite grids...")
     
     model = joblib.load(MODEL_PATH)
     
-    with rasterio.open(SOLAR_TIF) as src_solar, rasterio.open(WIND_TIF) as src_wind:
-        solar_data = src_solar.read(1)
-        wind_data = src_wind.read(1)
-        profile = src_solar.profile
-        
+    # Use rioxarray to seamlessly load and align the rasters
+    # (NASA Solar and Wind datasets have slightly different native grid resolutions!)
+    solar_da = rioxarray.open_rasterio(SOLAR_TIF)
+    wind_da = rioxarray.open_rasterio(WIND_TIF)
+    
+    print("Reprojecting and resampling Wind data to perfectly match the Solar grid...")
+    wind_aligned = wind_da.rio.reproject_match(solar_da)
+    
+    solar_data = solar_da.values[0]
+    wind_data = wind_aligned.values[0]
+    
     # Flatten the 2D arrays to 1D for the model
     solar_flat = solar_data.flatten()
     wind_flat = wind_data.flatten()
@@ -51,7 +58,11 @@ def create_suitability_heatmap():
     # Reshape back to 2D
     heatmap_2d = heatmap_flat.reshape(solar_data.shape)
     
-    # Save the heatmap TIFF
+    # Save the heatmap TIFF using rasterio
+    print("Saving the AI Heatmap...")
+    with rasterio.open(SOLAR_TIF) as src:
+        profile = src.profile
+        
     profile.update(dtype=rasterio.float32, nodata=-9999.0)
     with rasterio.open(HEATMAP_OUT, 'w', **profile) as dst:
         dst.write(heatmap_2d, 1)
@@ -66,7 +77,6 @@ def polygonize_high_potential(heatmap_2d, profile):
     mask = heatmap_2d > 0.80
     
     # Polygonize the mask using rasterio
-    # 'shapes' returns a generator of (polygon, value)
     results = (
         {'properties': {'suitability': v}, 'geometry': s}
         for i, (s, v) 
@@ -86,5 +96,7 @@ def polygonize_high_potential(heatmap_2d, profile):
     print("\nGap Analysis Complete! You can now load these files directly into QGIS.")
 
 if __name__ == "__main__":
+    import warnings
+    warnings.filterwarnings("ignore") # Suppress spatial merge warnings
     heatmap, prof = create_suitability_heatmap()
     polygonize_high_potential(heatmap, prof)
