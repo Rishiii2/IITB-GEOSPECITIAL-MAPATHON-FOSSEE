@@ -24,39 +24,61 @@ def download_geofabrik_data():
     print("Download complete!")
 
 def parse_osm_data():
-    """Extract power lines, substations, and solar/wind farms from PBF"""
-    print("Parsing OSM PBF data using pyrosm...")
+    """Extract power lines, substations, and solar/wind farms from PBF using pyogrio (streaming)"""
+    print("Parsing OSM PBF data using pyogrio and GDAL (Memory Efficient)...")
     try:
-        from pyrosm import OSM
+        import pyogrio
     except ImportError:
-        print("Error: 'pyrosm' is not installed. Please run 'pip install pyrosm'")
+        print("Error: 'pyogrio' is not installed. Please run 'pip install pyogrio'")
         return
 
-    osm = OSM(PBF_PATH)
+    # In GDAL's OSM driver, tags not defined in osmconf.ini go into the 'other_tags' column.
+    # We use a SQL-like WHERE clause to filter them out during the C++ read phase, bypassing python memory limits!
     
-    # 1. Extract power infrastructure (Custom filter)
-    print("Extracting high voltage power lines and substations...")
-    power_filter = {"power": ["line", "substation"]}
-    power_infrastructure = osm.get_data_by_custom_criteria(custom_filter=power_filter, keep_nodes=True, keep_ways=True, keep_relations=True)
-    
-    if power_infrastructure is not None and not power_infrastructure.empty:
-        out_power = os.path.join(RAW_DIR, "india_power_infrastructure.gpkg")
-        power_infrastructure.to_file(out_power, driver="GPKG")
-        print(f"Saved power infrastructure to {out_power}")
-    else:
-        print("No power infrastructure found.")
+    out_power = os.path.join(RAW_DIR, "india_power_infrastructure.gpkg")
+    out_renewables = os.path.join(RAW_DIR, "india_existing_renewables.gpkg")
 
-    # 2. Extract existing renewables (Solar/Wind)
-    print("Extracting existing solar and wind farms...")
-    renewable_filter = {"generator:source": ["solar", "wind"]}
-    renewables = osm.get_data_by_custom_criteria(custom_filter=renewable_filter, keep_nodes=True, keep_ways=True, keep_relations=True)
-    
-    if renewables is not None and not renewables.empty:
-        out_renewables = os.path.join(RAW_DIR, "india_existing_renewables.gpkg")
-        renewables.to_file(out_renewables, driver="GPKG")
-        print(f"Saved renewables to {out_renewables}")
-    else:
-        print("No renewable farms found.")
+    # 1. Extract Power Lines (usually represented as LineStrings)
+    print("Extracting high voltage power lines...")
+    try:
+        power_lines = pyogrio.read_dataframe(
+            PBF_PATH, 
+            layer="lines",
+            where="other_tags LIKE '%\"power\"=>\"line\"%' OR power='line'"
+        )
+        if not power_lines.empty:
+            power_lines.to_file(out_power, driver="GPKG", layer="power_lines")
+            print(f"  -> Saved {len(power_lines)} power lines.")
+    except Exception as e:
+        print(f"Error reading power lines: {e}")
+
+    # 2. Extract Substations (can be points or polygons)
+    print("Extracting substations (points)...")
+    try:
+        substations_pt = pyogrio.read_dataframe(
+            PBF_PATH, 
+            layer="points",
+            where="other_tags LIKE '%\"power\"=>\"substation\"%' OR power='substation'"
+        )
+        if not substations_pt.empty:
+            substations_pt.to_file(out_power, driver="GPKG", layer="substations_points")
+            print(f"  -> Saved {len(substations_pt)} substations (points).")
+    except Exception as e:
+        pass
+
+    # 3. Extract existing renewables (Solar/Wind Farms - usually polygons)
+    print("Extracting existing solar and wind farms (polygons)...")
+    try:
+        solar_wind = pyogrio.read_dataframe(
+            PBF_PATH, 
+            layer="multipolygons",
+            where="other_tags LIKE '%\"generator:source\"=>\"solar\"%' OR other_tags LIKE '%\"generator:source\"=>\"wind\"%'"
+        )
+        if not solar_wind.empty:
+            solar_wind.to_file(out_renewables, driver="GPKG", layer="solar_wind_farms")
+            print(f"  -> Saved {len(solar_wind)} renewable farms.")
+    except Exception as e:
+        print(f"Error reading solar/wind farms: {e}")
 
 if __name__ == "__main__":
     download_geofabrik_data()
