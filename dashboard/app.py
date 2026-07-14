@@ -170,7 +170,7 @@ if data is not None:
     r = pdk.Deck(
         layers=[heatmap_layer, layer],
         initial_view_state=view_state,
-        map_style="mapbox://styles/mapbox/dark-v10", # Dark mode map
+        map_style=pdk.map_styles.DARK, # Use default Carto Dark mode (no API key required)
         tooltip={"text": "Concentration of High-Potential Zones in this area"}
     )
     
