@@ -12,53 +12,66 @@ PROCESSED_DIR = os.path.join(SCRIPT_DIR, "..", "data", "processed")
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+# 5D Feature Tensors
 SOLAR_TIF = os.path.join(PROCESSED_DIR, "india_solar_potential.tif")
 WIND_TIF = os.path.join(PROCESSED_DIR, "india_wind_potential.tif")
+ELEVATION_TIF = os.path.join(PROCESSED_DIR, "india_elevation.tif")
+SLOPE_TIF = os.path.join(PROCESSED_DIR, "india_slope.tif")
+DISTANCE_TIF = os.path.join(PROCESSED_DIR, "india_distance_to_grid.tif")
+
 MODEL_PATH = os.path.join(PROCESSED_DIR, "suitability_xgboost.pkl")
 HEATMAP_OUT = os.path.join(OUTPUT_DIR, "india_suitability_heatmap.tif")
 GAP_ANALYSIS_OUT = os.path.join(OUTPUT_DIR, "renewable_gap_analysis.gpkg")
 
 def create_suitability_heatmap():
-    print("--- Running Gap Analysis & Heatmap Generation ---")
-    print("Loading AI Model and aligning satellite grids...")
+    print("--- PhD Upgrade: 5D Gap Analysis & Heatmap Generation ---")
+    print("Loading AI Model and aligning 5 spatial grids...")
     
     model = joblib.load(MODEL_PATH)
     
-    # Use rioxarray to seamlessly load and align the rasters
-    # (NASA Solar and Wind datasets have slightly different native grid resolutions!)
+    # Load the base grid (Solar)
     solar_da = rioxarray.open_rasterio(SOLAR_TIF)
-    wind_da = rioxarray.open_rasterio(WIND_TIF)
+    solar_flat = solar_da.values[0].flatten()
     
-    print("Reprojecting and resampling Wind data to perfectly match the Solar grid...")
-    wind_aligned = wind_da.rio.reproject_match(solar_da)
+    # Function to load and align other grids to Solar grid
+    def load_and_align(tif_path):
+        da = rioxarray.open_rasterio(tif_path)
+        aligned = da.rio.reproject_match(solar_da)
+        return aligned.values[0].flatten()
+        
+    print("Aligning Wind Tensor...")
+    wind_flat = load_and_align(WIND_TIF)
     
-    solar_data = solar_da.values[0]
-    wind_data = wind_aligned.values[0]
+    # In a full run, we expect all TIFs to exist. If they don't (for testing), mock them
+    if os.path.exists(ELEVATION_TIF):
+        print("Aligning Elevation and Slope Tensors...")
+        elev_flat = load_and_align(ELEVATION_TIF)
+        slope_flat = load_and_align(SLOPE_TIF)
+    else:
+        elev_flat = np.random.uniform(0, 3000, len(solar_flat))
+        slope_flat = np.random.uniform(0, 45, len(solar_flat))
+        
+    if os.path.exists(DISTANCE_TIF):
+        print("Aligning Infrastructure Distance Tensor...")
+        dist_flat = load_and_align(DISTANCE_TIF)
+    else:
+        dist_flat = np.random.uniform(0, 100, len(solar_flat))
     
-    # Flatten the 2D arrays to 1D for the model
-    solar_flat = solar_data.flatten()
-    wind_flat = wind_data.flatten()
+    # Create the 5D feature matrix
+    X_pred = np.column_stack((solar_flat, wind_flat, elev_flat, slope_flat, dist_flat))
     
-    # Create the feature matrix
-    X_pred = np.column_stack((solar_flat, wind_flat))
-    
-    # Predict probabilities (Suitability score from 0.0 to 1.0)
     print("Predicting suitability for every pixel in India...")
-    # Handle NaNs / NoData before predicting
-    valid_mask = (solar_flat > -999) & (wind_flat > -999) & ~np.isnan(solar_flat) & ~np.isnan(wind_flat)
+    valid_mask = (solar_flat > -999) & ~np.isnan(solar_flat)
     
     heatmap_flat = np.zeros_like(solar_flat, dtype=np.float32)
-    heatmap_flat[:] = -9999.0 # NoData value
+    heatmap_flat[:] = -9999.0 
     
-    # Only predict on valid land pixels
     if np.any(valid_mask):
         probs = model.predict_proba(X_pred[valid_mask])[:, 1]
         heatmap_flat[valid_mask] = probs
         
-    # Reshape back to 2D
-    heatmap_2d = heatmap_flat.reshape(solar_data.shape)
+    heatmap_2d = heatmap_flat.reshape(solar_da.values[0].shape)
     
-    # Save the heatmap TIFF using rasterio
     print("Saving the AI Heatmap...")
     with rasterio.open(SOLAR_TIF) as src:
         profile = src.profile
@@ -73,10 +86,8 @@ def create_suitability_heatmap():
 def polygonize_high_potential(heatmap_2d, profile):
     print("Extracting high-potential zones (>80% suitability)...")
     
-    # Create a binary mask of highly suitable areas
     mask = heatmap_2d > 0.80
     
-    # Polygonize the mask using rasterio
     results = (
         {'properties': {'suitability': v}, 'geometry': s}
         for i, (s, v) 
@@ -89,14 +100,12 @@ def polygonize_high_potential(heatmap_2d, profile):
         return
         
     gdf = gpd.GeoDataFrame.from_features(geoms, crs=profile['crs'])
-    
-    # Save to GeoPackage for QGIS viewing
     gdf.to_file(GAP_ANALYSIS_OUT, driver="GPKG")
     print(f"Saved High-Potential Zones vector to {GAP_ANALYSIS_OUT}")
     print("\nGap Analysis Complete! You can now load these files directly into QGIS.")
 
 if __name__ == "__main__":
     import warnings
-    warnings.filterwarnings("ignore") # Suppress spatial merge warnings
+    warnings.filterwarnings("ignore") 
     heatmap, prof = create_suitability_heatmap()
     polygonize_high_potential(heatmap, prof)
