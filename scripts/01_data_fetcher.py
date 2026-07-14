@@ -1,6 +1,5 @@
 import os
 import requests
-import geopandas as gpd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RAW_DIR = os.path.join(SCRIPT_DIR, "..", "data", "raw")
@@ -33,7 +32,7 @@ def parse_osm_data():
         return
 
     # In GDAL's OSM driver, tags not defined in osmconf.ini go into the 'other_tags' column.
-    # We use a SQL-like WHERE clause to filter them out during the C++ read phase, bypassing python memory limits!
+    # We strictly query 'other_tags' because GDAL throws an error if we query an unmapped column like 'power'.
     
     out_power = os.path.join(RAW_DIR, "india_power_infrastructure.gpkg")
     out_renewables = os.path.join(RAW_DIR, "india_existing_renewables.gpkg")
@@ -44,11 +43,13 @@ def parse_osm_data():
         power_lines = pyogrio.read_dataframe(
             PBF_PATH, 
             layer="lines",
-            where="other_tags LIKE '%\"power\"=>\"line\"%' OR power='line'"
+            where="other_tags LIKE '%\"power\"=>\"line\"%'"
         )
         if not power_lines.empty:
             power_lines.to_file(out_power, driver="GPKG", layer="power_lines")
             print(f"  -> Saved {len(power_lines)} power lines.")
+        else:
+            print("  -> No power lines found matching criteria.")
     except Exception as e:
         print(f"Error reading power lines: {e}")
 
@@ -58,13 +59,15 @@ def parse_osm_data():
         substations_pt = pyogrio.read_dataframe(
             PBF_PATH, 
             layer="points",
-            where="other_tags LIKE '%\"power\"=>\"substation\"%' OR power='substation'"
+            where="other_tags LIKE '%\"power\"=>\"substation\"%'"
         )
         if not substations_pt.empty:
             substations_pt.to_file(out_power, driver="GPKG", layer="substations_points")
             print(f"  -> Saved {len(substations_pt)} substations (points).")
+        else:
+            print("  -> No substations found matching criteria.")
     except Exception as e:
-        pass
+        print(f"Error reading substations: {e}")
 
     # 3. Extract existing renewables (Solar/Wind Farms - usually polygons)
     print("Extracting existing solar and wind farms (polygons)...")
@@ -77,6 +80,8 @@ def parse_osm_data():
         if not solar_wind.empty:
             solar_wind.to_file(out_renewables, driver="GPKG", layer="solar_wind_farms")
             print(f"  -> Saved {len(solar_wind)} renewable farms.")
+        else:
+            print("  -> No solar/wind farms found matching criteria.")
     except Exception as e:
         print(f"Error reading solar/wind farms: {e}")
 
