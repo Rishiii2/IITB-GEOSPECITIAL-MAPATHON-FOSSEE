@@ -1,59 +1,68 @@
 import os
-import dask
+import geopandas as gpd
 import xarray as xr
 import rioxarray
+import numpy as np
 
-# Set up Dask for parallel processing of large rasters
-from dask.distributed import Client
-
-# Directory paths
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RAW_DIR = os.path.join(SCRIPT_DIR, "..", "data", "raw")
 PROCESSED_DIR = os.path.join(SCRIPT_DIR, "..", "data", "processed")
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 
-# Target resolution and CRS for all rasters (EPSG:4326 for India, ~500m resolution)
-TARGET_CRS = "EPSG:4326"
-TARGET_RESOLUTION = 0.005  # approx 500m at equator
-
-def process_raster(input_filename, output_filename, is_categorical=False):
-    input_path = os.path.join(RAW_DIR, input_filename)
-    output_path = os.path.join(PROCESSED_DIR, output_filename)
+def process_nasa_rasters():
+    print("Stitching NASA POWER NetCDF tiles...")
     
-    if not os.path.exists(input_path):
-        print(f"Warning: {input_filename} not found in {RAW_DIR}. Skipping.")
-        return
+    # Load and stitch Solar tiles
+    solar_files = os.path.join(RAW_DIR, "nasa_power_india_ALLSKY_SFC_SW_DWN_*.nc")
+    try:
+        # open_mfdataset combines all matched files into one dataset
+        ds_solar = xr.open_mfdataset(solar_files, combine='by_coords')
         
-    print(f"Processing {input_filename}...")
-    
-    # Open with chunking to prevent memory overload
-    # Adjust chunks based on your RAM (e.g., 2048x2048)
-    da = rioxarray.open_rasterio(input_path, chunks={'x': 2048, 'y': 2048})
-    
-    # Reproject to target CRS and Resolution
-    resampling_method = 0 if is_categorical else 1 # 0=Nearest (for LULC), 1=Bilinear (for Solar/Wind)
-    
-    da_reprojected = da.rio.reproject(
-        TARGET_CRS,
-        resolution=TARGET_RESOLUTION,
-        resampling=resampling_method
-    )
-    
-    # Write to processed folder
-    print(f"Saving to {output_filename}...")
-    da_reprojected.rio.to_raster(output_path, tiled=True, windowed=True)
-    print(f"Finished {output_filename}.")
+        # We need the 30-year climatology average (usually stored in the variable)
+        # Assuming the variable is ALLSKY_SFC_SW_DWN and has dimensions (lat, lon)
+        # NASA POWER climatology usually has a 'time' dimension of 13 (12 months + 1 annual average)
+        # We'll take the annual average (which is usually the 13th index, or we can just mean across time)
+        
+        # For simplicity in this blueprint, let's take the mean across the time dimension
+        solar_annual = ds_solar['ALLSKY_SFC_SW_DWN'].mean(dim='time', skipna=True)
+        
+        # Assign CRS (EPSG:4326 for standard lat/lon)
+        solar_annual = solar_annual.rio.write_crs("epsg:4326")
+        
+        # Save to processed GeoTIFF
+        solar_out = os.path.join(PROCESSED_DIR, "india_solar_potential.tif")
+        solar_annual.rio.to_raster(solar_out)
+        print(f"Saved National Solar Raster to {solar_out}")
+        
+    except Exception as e:
+        print(f"Error processing Solar tiles: {e}")
+
+    # Load and stitch Wind tiles
+    wind_files = os.path.join(RAW_DIR, "nasa_power_india_WS50M_*.nc")
+    try:
+        ds_wind = xr.open_mfdataset(wind_files, combine='by_coords')
+        wind_annual = ds_wind['WS50M'].mean(dim='time', skipna=True)
+        wind_annual = wind_annual.rio.write_crs("epsg:4326")
+        
+        wind_out = os.path.join(PROCESSED_DIR, "india_wind_potential.tif")
+        wind_annual.rio.to_raster(wind_out)
+        print(f"Saved National Wind Raster to {wind_out}")
+        
+    except Exception as e:
+        print(f"Error processing Wind tiles: {e}")
+
+def prepare_infrastructure_data():
+    """
+    In a full pipeline, this function would:
+    1. Load india_power_infrastructure.gpkg
+    2. Rasterize the lines to match the NASA resolution
+    3. Calculate Euclidean Distance to the nearest power line for every pixel
+    """
+    print("\nVector infrastructure data is ready in data/raw/india_power_infrastructure.gpkg")
+    print("For the XGBoost model, we will calculate the distance from each pixel to the nearest power line.")
+    print("(Distance transformation logic goes here - usually via scipy.ndimage.distance_transform_edt)")
 
 if __name__ == "__main__":
-    # Start Dask client to utilize all CPU cores
-    client = Client()
-    print("Dask client started. Dashboard link:", client.dashboard_link)
-    
-    # List of expected rasters to process
-    # Note: These files must be manually placed in data/raw/ before running this script
-    process_raster("solar_irradiance_raw.tif", "solar_aligned.tif", is_categorical=False)
-    process_raster("wind_speed_raw.tif", "wind_aligned.tif", is_categorical=False)
-    process_raster("dem_raw.tif", "dem_aligned.tif", is_categorical=False)
-    process_raster("lulc_raw.tif", "lulc_aligned.tif", is_categorical=True)
-    
-    print("All raster preprocessing complete.")
+    process_nasa_rasters()
+    prepare_infrastructure_data()
+    print("Raster preprocessing pipeline complete.")
