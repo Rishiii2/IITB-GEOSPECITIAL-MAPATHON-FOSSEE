@@ -67,6 +67,14 @@ props = dict(boxstyle='round', facecolor='#0f172a', alpha=0.8, edgecolor='#38bdf
 ax.text(0.02, 0.03, text_box, transform=ax.transAxes, fontsize=10, color='white',
         verticalalignment='bottom', bbox=props)
 
+# Add Academic and Data References on the map
+ref_text = ("Data Sources: NASA POWER, NOAA ETOPO1, OpenStreetMap\\n"
+            "Methodology Ref: Li, Y., et al. (2022). Global Spatial Suitability\\n"
+            "Mapping of Wind and Solar Systems Using an Explainable AI-Based Approach. MDPI.")
+ref_props = dict(boxstyle='round', facecolor='#0f172a', alpha=0.7, edgecolor='gray')
+ax.text(0.98, 0.02, ref_text, transform=ax.transAxes, fontsize=7, color='lightgray',
+        verticalalignment='bottom', horizontalalignment='right', bbox=ref_props)
+
 # 5. Export to High-Res PDF and PNG
 print("Exporting Final Maps...")
 plt.savefig(FINAL_MAP_PDF, format='pdf', bbox_inches='tight', facecolor='#0f172a')
