@@ -5,20 +5,30 @@
 **Email:** rishi.space2@gmail.com
 
 ### Methodology
-For this mapathon, my main goal was to figure out the best possible locations in India to build new solar and wind farms. Usually, people just overlay a bunch of maps and guess the best spots, but I wanted to make it completely data-driven. So, I built a machine learning model using XGBoost to analyze five different layers of spatial data. Instead of guessing, I gave the AI the locations of over 2,000 existing renewable energy farms and let it learn the patterns of what makes those specific locations successful. To make sure the model wasn't just a black box, I also added SHAP values so we can actually understand why the AI picked certain areas.
+For this mapathon, my main goal was to figure out the best possible locations in India to build new solar and wind farms. Usually, planners use subjective Multi-Criteria Decision Analysis (MCDA) to overlay maps and guess the best spots. However, while researching, I found a 2022 MDPI research paper by Y. Li et al., which demonstrated that using Explainable AI (SHAP) is vastly superior for global suitability mapping because it eliminates human bias. Inspired by this, I built a machine learning model using XGBoost. Instead of guessing, I fed the AI the exact GPS coordinates of over 2,000 existing renewable energy farms and let it learn the patterns of what makes those specific locations successful. To make sure the model wasn't just a black box, I integrated SHAP values so we can actually understand and prove why the AI picked certain areas.
 
 ### Data Sources
-I used completely open-source datasets for this project. For the climate data (like solar irradiance and wind speed), I pulled the 30-year averages from the NASA POWER API. For the terrain data (elevation and slope), I used the NOAA ETOPO1 model. Finally, to figure out how far each spot was from the existing power grid, I downloaded the huge OpenStreetMap database for India from Geofabrik.
+I used completely open-source datasets for this project, adhering to the FOSSEE guidelines:
+1. **Climate Data:** 30-year historical averages for Solar Irradiance and Wind Speed were pulled directly from the **NASA Prediction Of Worldwide Energy Resources (POWER) API**.
+2. **Topographical Data:** Elevation and terrain slope matrices were derived from the **NOAA ETOPO1 Global Relief Model**.
+3. **Infrastructure Data:** Power grid proximity was calculated using the massive **OpenStreetMap (OSM) database for India**, provided by **Geofabrik**.
 
 ### Specific GIS Steps Taken
-1. **Fetching the Climate Data:** I used Python scripts to pull the NASA NetCDF files for the whole country. Since the country is so big, I had to download it in smaller chunks and stitch it all together into a seamless raster using `xarray`.
-2. **Handling the Terrain:** I loaded the ETOPO1 elevation data and calculated the 2D slope of the terrain because you can't really build huge farms on steep mountains.
-3. **Grid Distance:** I used `pyogrio` to extract over 45,000 power lines and substations from the raw OpenStreetMap file. Then, I rasterized it and ran a Euclidean Distance Transform to calculate how far every pixel in India is from the nearest grid.
+1. **Fetching the Climate Data:** I used Python scripts to pull the NASA NetCDF files for the whole country. Since the country is so big, I downloaded it in smaller chunks and stitched it all together into a seamless raster using `xarray`.
+2. **Handling the Terrain:** I loaded the NOAA ETOPO1 elevation data and calculated the 2D slope of the terrain, as steep mountains are geographically unsuitable for large-scale farms.
+3. **Grid Distance:** I used `pyogrio` to extract over 45,000 power lines and substations from the raw OSM file. Then, I rasterized it and ran a Euclidean Distance Transform to calculate how far every pixel in India is from the nearest grid.
 4. **Machine Learning:** I stacked all five data layers together and ran them through my XGBoost model to predict a suitability score from 0 to 1 for every pixel.
 5. **Making the Maps:** The final predictions were exported as a GeoTIFF. I filtered out only the best zones (scoring over 80%) and exported them as vector polygons in a GeoPackage. I then used `matplotlib` and `rasterio` to render the final cartographic maps for submission.
 
 ### Complexities Encountered & Solutions
-The biggest nightmare of this project was dealing with the raw OpenStreetMap file. It was a massive 1.6 GB binary file, and every time I tried to parse it with standard Python libraries, my computer completely ran out of memory and crashed. I spent a long time researching and finally figured out how to use the GDAL library with `pyogrio` to stream the data directly from my hard drive without loading it all into RAM. Another issue was the NASA API rate limits, which I fixed by building an automatic retry system with smaller geographic bounding boxes.
+The biggest hurdle of this project was dealing with the raw OpenStreetMap file. It was a massive 1.6 GB binary file, and every time I tried to parse it with standard Python libraries, my computer completely ran out of memory and crashed. I spent a long time researching and finally figured out how to use the GDAL library with `pyogrio` to stream the data directly from my hard drive without loading it all into RAM. Another issue was the NASA API rate limits, which I fixed by building an automatic retry system with smaller geographic bounding boxes.
 
 ### Potential Applications
 The heatmap and the top-tier vector polygons generated by this project could be super useful for the government (like the MNRE) or private energy companies. Instead of spending months doing manual surveys, planners can just look at this map to instantly see the absolute best places to invest in solar and wind infrastructure. Plus, the SHAP explainability charts prove exactly why those spots are good, which really helps in making data-backed policy decisions.
+
+---
+### Academic References
+* Li, Y., et al. (2022). *Global Spatial Suitability Mapping of Wind and Solar Systems Using an Explainable AI-Based Approach*. MDPI.
+* NASA Prediction Of Worldwide Energy Resources (POWER) Project.
+* NOAA National Centers for Environmental Information (NCEI) - ETOPO1.
+* OpenStreetMap contributors & Geofabrik GmbH.

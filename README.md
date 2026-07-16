@@ -1,12 +1,12 @@
 # 🛰️ Space-to-Earth Matrix: AI-Driven Renewable Energy Optimization
 
-**IIT Bombay FOSSEE Mapathon 2026 - Top 1% Submission**
+**IIT Bombay FOSSEE Mapathon 2026 Submission by Rishikant**
 
-This repository contains a state-of-the-art (SOTA), PhD-level Machine Learning geospatial pipeline designed to automatically identify optimal geographical zones for renewable energy farms (Solar & Wind) across the Indian Subcontinent.
+This repository contains a data-driven Machine Learning geospatial pipeline designed to automatically identify optimal geographical zones for renewable energy farms (Solar & Wind) across the Indian Subcontinent.
 
 ## 🧠 The Architecture
 
-Traditional Multi-Criteria Decision Analysis (MCDA) relies on human experts assigning arbitrary weights to environmental factors. This project eliminates human bias by deploying an **Explainable AI (XGBoost + SHAP)** model. 
+Traditional Multi-Criteria Decision Analysis (MCDA) relies on human experts assigning subjective weights to environmental factors. Inspired by recent academic literature (see Academic References), this project eliminates human bias by deploying an **Explainable AI (XGBoost + SHAP)** model. 
 
 The AI was trained by cross-referencing the exact GPS coordinates of **2,168 existing solar and wind farms** against a **5-Dimensional Spatial Tensor**:
 1. **Solar Irradiance:** 30-year climatology (NASA POWER)
@@ -60,5 +60,16 @@ streamlit run dashboard/app.py
 - **Frontend / Visualization:** `streamlit`, `pydeck` (Deck.GL), WebGL
 - **Data Sources:** OpenStreetMap (Geofabrik), NASA POWER (CERES/MERRA-2), NOAA ETOPO1
 
+## 📚 Academic References & Data Sources
+To ensure maximum scientific validity, this project's methodology was inspired by and built upon the following academic research and open-source datasets:
+
+### Research Papers
+- Li, Y., et al. (2022). *Global Spatial Suitability Mapping of Wind and Solar Systems Using an Explainable AI-Based Approach*. MDPI. This paper provided the foundational proof that utilizing SHAP to interpret Machine Learning models outperforms traditional MCDA methodologies for site selection.
+
+### Open-Source Datasets
+- **NASA POWER API:** Prediction Of Worldwide Energy Resources (CERES/MERRA-2) - 30-year climatology data for Solar Irradiance and Wind Speed.
+- **NOAA ETOPO1:** 1-arc-minute Global Relief Model used for precise topographic and slope analysis.
+- **OpenStreetMap / Geofabrik:** Comprehensive spatial data containing over 45,000 national power lines and substations used to compute Euclidean distance to the electrical grid.
+
 ---
-*Developed for the IIT Bombay FOSSEE Mapathon 2026.*
+*Developed by Rishikant for the IIT Bombay FOSSEE Mapathon 2026.*
